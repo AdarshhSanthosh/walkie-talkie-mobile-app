@@ -6,6 +6,7 @@ import '../../models/channel.dart';
 import '../../models/presence_status.dart';
 import '../../services/database_service.dart';
 import '../../services/presence_service.dart';
+import '../../services/profile_service.dart';
 
 /// Home screen (spec §11): greeting, online friends preview, channel list,
 /// create-channel entry point. Data is mocked via [presenceServiceProvider]
@@ -25,6 +26,8 @@ class HomeTab extends ConsumerWidget {
     final friends = ref.watch(friendsProvider);
     final onlineFriends = friends.where((f) => f.status == PresenceStatus.online).toList();
     final channels = ref.watch(databaseServiceProvider);
+    final profile = ref.watch(profileServiceProvider);
+    final name = profile.value?.displayName ?? '';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Walkie Talkie')),
@@ -32,7 +35,7 @@ class HomeTab extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            '${_greeting()}, John',
+            name.isEmpty ? _greeting() : '${_greeting()}, $name',
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 24),

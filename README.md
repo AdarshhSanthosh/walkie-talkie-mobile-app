@@ -1,9 +1,10 @@
 # Walkie Talkie
 
 Cross-platform push-to-talk voice app (Flutter/Dart). See the full product
-spec discussed with the team for the end-to-end vision — this repo currently
-implements **Phase 1** of that plan: a runnable UI scaffold with mock data,
-no backend yet.
+spec discussed with the team for the end-to-end vision. This repo has:
+
+- **Phase 1** done: a runnable UI scaffold with mock data.
+- **Phase 2** done: real Supabase authentication + profiles.
 
 Visual design is matched to the reference at
 [friend-chatterbox.lovable.app](https://friend-chatterbox.lovable.app) ("Holler"):
@@ -17,20 +18,22 @@ it's modeled on.
 
 | Area | Status |
 |---|---|
-| Navigation (Splash → Login → Home → Channel → Create Channel) | ✅ Real (`go_router`) |
+| Navigation (Splash → Login → Sign Up → Home → Channel → Create Channel) | ✅ Real (`go_router`) |
+| Auth (email/password) | ✅ Real (Supabase Auth) |
+| Profiles (`profiles` table, display name shown on Home) | ✅ Real (Supabase Postgres) |
 | Theme (Light/Dark/System), persisted | ✅ Real (`shared_preferences`) |
 | TALK button (press-and-hold, haptics, local speaking state) | ✅ Real interaction, no real audio |
 | Create Channel → invite code + QR code | ✅ Real (`qr_flutter`), channel is local-only |
-| Auth (email/password, Google, Apple) | 🟡 Fake — any non-empty input logs in |
+| Auth (Google, Apple) | 🟡 Wired, but needs providers enabled in the Supabase dashboard first |
 | Friends / presence | 🟡 Fake — static mock list |
 | Channels | 🟡 Fake — static in-memory list |
 | Voice (WebRTC), push notifications (FCM), Bluetooth routing | ⬜ Not implemented yet |
 
-Every "fake" piece lives behind a service class in [lib/services/](lib/services/)
-(`auth_service.dart`, `database_service.dart`, `presence_service.dart`,
-`webrtc_service.dart`), each exposed as a Riverpod provider. Later phases
-replace the implementation inside these files with real Supabase/Firebase/
-WebRTC calls — the screens that consume them shouldn't need to change.
+Every "fake" piece lives behind a service class in [lib/services/](lib/services/),
+each exposed as a Riverpod provider — `auth_service.dart` and
+`profile_service.dart` are now real Supabase calls; `database_service.dart`,
+`presence_service.dart`, and `webrtc_service.dart` are still fakes, ready to
+be swapped in later phases without the screens needing to change.
 
 ## Project structure
 
@@ -38,16 +41,36 @@ WebRTC calls — the screens that consume them shouldn't need to change.
 lib/
 ├── main.dart
 ├── app/            # MaterialApp.router, routes, theme
+├── core/config/     # Supabase env config + "not configured" fallback screen
 ├── features/
-│   ├── auth/       # splash + login
+│   ├── auth/       # splash + login + sign up
 │   ├── home/       # bottom-nav shell + home tab
 │   ├── friends/    # friends list (stub)
 │   ├── channels/   # channel + create-channel screens
 │   ├── voice/       # TALK button widget
 │   └── settings/   # theme picker
-├── services/       # fake service layer (see table above)
+├── services/       # auth/profile are real Supabase; rest are still fakes
 └── models/         # AppUser, VoiceChannel, enums
+supabase/
+└── schema.sql      # profiles table + RLS + auto-create-on-signup trigger
 ```
+
+## One-time setup: Supabase project
+
+1. Create a project at [supabase.com](https://supabase.com/dashboard) (free tier is fine).
+2. Open the SQL Editor and run [supabase/schema.sql](supabase/schema.sql) once —
+   it creates the `profiles` table, its RLS policies, and a trigger that
+   auto-creates a profile row whenever someone signs up.
+3. In Project Settings → API, copy the **Project URL** and the **anon
+   public** key.
+4. Copy `env.example.json` to `env.json` (gitignored — never commit real
+   keys) and fill in those two values.
+
+Google/Apple sign-in additionally need their providers enabled under
+Authentication → Providers in the Supabase dashboard, plus your own
+Google Cloud / Apple Developer OAuth credentials — not set up yet. The
+buttons are wired and will show a clear "provider not enabled" error until
+that's done; email/password is fully functional without it.
 
 ## Running it
 
@@ -69,19 +92,24 @@ flutter pub get
 # Start the emulator (if it isn't already running)
 emulator -avd Pixel_8_API_34
 
-# Run on it
-flutter run -d emulator-5554
-# or: flutter run -d chrome / flutter run -d windows
+# Run on it, passing your Supabase credentials (see setup above)
+flutter run -d emulator-5554 --dart-define-from-file=env.json
+# or: flutter run -d chrome --dart-define-from-file=env.json
 ```
 
-`flutter analyze` and `flutter test` are both clean, and the app has been
-verified end-to-end on the emulator (login → home → channel → hold-to-talk
-→ transmission logged).
+Without `env.json` configured, the app shows a "Supabase isn't configured"
+screen instead of crashing, with the same setup steps as above.
+
+`flutter analyze` and `flutter test` are both clean. Phase 1's UI flow
+(login → home → channel → hold-to-talk → transmission logged) was verified
+end-to-end on the emulator; Phase 2's real auth is wired and analyzed but
+still needs a live Supabase project to exercise fully — see "Next steps".
 
 ## Next steps (later phases)
 
-1. **Real auth** — wire `auth_service.dart` to Supabase Auth (email/password
-   + Google/Apple OAuth). Requires a Supabase project (URL + anon key).
+1. **Finish verifying Phase 2 live** — once a Supabase project exists, run
+   through sign up → (confirm email if required) → log in → see your real
+   name on Home → log out, on the emulator.
 2. **Friends & blocking** — replace `presence_service.dart` with a Supabase
    Realtime-backed implementation; add request/accept/block flows.
 3. **Real channels & permissions** — replace `database_service.dart` with

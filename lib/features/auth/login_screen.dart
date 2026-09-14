@@ -6,8 +6,9 @@ import '../../services/auth_service.dart';
 
 /// Login screen (spec §11 / §3): email+password, Google, Apple.
 ///
-/// Phase 1: any non-empty email/password "logs in". Phase 2 wires this to
-/// real Supabase Auth (email/password + OAuth providers).
+/// Phase 2: wired to real Supabase Auth. Google/Apple require their
+/// providers to be enabled in the Supabase dashboard first — until then
+/// they'll surface a clear error instead of signing in.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -33,24 +34,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _loading = true;
       _error = null;
     });
-    final ok = await ref.read(authServiceProvider.notifier).signIn(
+    final error = await ref.read(authServiceProvider.notifier).signIn(
           email: _emailCtrl.text,
           password: _passwordCtrl.text,
         );
     if (!mounted) return;
     setState(() => _loading = false);
-    if (ok) {
+    if (error == null) {
       context.go('/home');
     } else {
-      setState(() => _error = 'Enter an email and password to continue.');
+      setState(() => _error = error);
     }
   }
 
-  Future<void> _oauth(Future<void> Function() action) async {
-    setState(() => _loading = true);
-    await action();
+  Future<void> _oauth(Future<String?> Function() action) async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final error = await action();
     if (!mounted) return;
-    context.go('/home');
+    setState(() => _loading = false);
+    if (error == null) {
+      context.go('/home');
+    } else {
+      setState(() => _error = error);
+    }
   }
 
   @override
@@ -127,7 +136,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
               const SizedBox(height: 24),
               TextButton(
-                onPressed: _loading ? null : _submit,
+                onPressed: _loading ? null : () => context.push('/signup'),
                 child: const Text('Create Account'),
               ),
             ],

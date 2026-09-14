@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for release builds too, not just debug: the app talks to
+         Supabase (auth/DB/realtime) and later WebRTC/FCM over the network. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="walkie_talkie"
         android:name="${applicationName}"

@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import '../features/auth/login_screen.dart';
+import '../features/auth/signup_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/channels/channel_screen.dart';
 import '../features/channels/create_channel_screen.dart';
@@ -12,6 +13,7 @@ final appRouter = GoRouter(
   routes: [
     GoRoute(path: '/splash', builder: (context, state) => const SplashScreen()),
     GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+    GoRoute(path: '/signup', builder: (context, state) => const SignUpScreen()),
     GoRoute(path: '/home', builder: (context, state) => const HomeShell()),
     GoRoute(
       path: '/create-channel',
