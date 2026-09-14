@@ -38,7 +38,13 @@ class SettingsTab extends ConsumerWidget {
           const _ComingSoonSection(title: 'Audio'),
           const _ComingSoonSection(title: 'Notifications'),
           const _ComingSoonSection(title: 'Privacy'),
-          const _ComingSoonSection(title: 'Security'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Security'),
+            subtitle: const Text('Blocked users'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/blocked-users'),
+          ),
           const SizedBox(height: 16),
           OutlinedButton.icon(
             onPressed: () {

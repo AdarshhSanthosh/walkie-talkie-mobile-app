@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme.dart';
 import '../../models/channel.dart';
 import '../../services/database_service.dart';
-import '../../services/presence_service.dart';
+import '../../services/friends_service.dart';
 import '../../services/transmission_log_service.dart';
 import '../../services/webrtc_service.dart';
 import '../voice/talk_button.dart';
@@ -29,8 +29,8 @@ class ChannelScreen extends ConsumerWidget {
         break;
       }
     }
-    final members = ref.watch(friendsProvider);
-    final onlineCount = ref.watch(onlineCountProvider);
+    final members = ref.watch(friendsListProvider).value ?? [];
+    final onlineCount = ref.watch(onlineCountProvider).value ?? 0;
     final session = ref.watch(webRtcServiceProvider);
     final recent = ref.watch(transmissionLogServiceProvider);
 

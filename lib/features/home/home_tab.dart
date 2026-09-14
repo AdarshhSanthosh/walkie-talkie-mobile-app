@@ -5,12 +5,12 @@ import 'package:go_router/go_router.dart';
 import '../../models/channel.dart';
 import '../../models/presence_status.dart';
 import '../../services/database_service.dart';
-import '../../services/presence_service.dart';
+import '../../services/friends_service.dart';
 import '../../services/profile_service.dart';
 
 /// Home screen (spec §11): greeting, online friends preview, channel list,
-/// create-channel entry point. Data is mocked via [presenceServiceProvider]
-/// and [databaseServiceProvider] for Phase 1.
+/// create-channel entry point. Friends are real (spec §4, Phase 3);
+/// channels are still mocked via [databaseServiceProvider] until Phase 4.
 class HomeTab extends ConsumerWidget {
   const HomeTab({super.key});
 
@@ -23,7 +23,7 @@ class HomeTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final friends = ref.watch(friendsProvider);
+    final friends = ref.watch(friendsListProvider).value ?? [];
     final onlineFriends = friends.where((f) => f.status == PresenceStatus.online).toList();
     final channels = ref.watch(databaseServiceProvider);
     final profile = ref.watch(profileServiceProvider);
