@@ -3,15 +3,23 @@ import 'package:flutter/material.dart';
 import '../../../app/theme.dart';
 import '../../../core/utils/relative_time.dart';
 import '../../../models/app_user.dart';
+import '../../../models/channel.dart';
 import '../../../models/presence_status.dart';
 
 /// One row in the channel's "FRIENDS" list (design reference): avatar with
 /// an online-status dot, name, "last heard Xm ago", and a trailing state —
-/// an "on channel" pill, a plain online dot, or "offline".
+/// a role pill (owner/admin/mod), a plain online dot, or "offline".
+///
+/// [role] is the member's role in this channel (Phase 4); when it's above
+/// `member`, its label replaces the plain online dot. [onRemove], when
+/// non-null, adds a trailing "⋮ Remove" menu — pass it only when the
+/// current user is allowed to remove this member.
 class MemberRow extends StatelessWidget {
   final AppUser member;
+  final ChannelRole? role;
+  final VoidCallback? onRemove;
 
-  const MemberRow({super.key, required this.member});
+  const MemberRow({super.key, required this.member, this.role, this.onRemove});
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +77,14 @@ class MemberRow extends StatelessWidget {
             ),
           ),
           _trailing(context, isOffline),
+          if (onRemove != null)
+            PopupMenuButton<String>(
+              icon: Icon(Icons.more_vert, color: context.textMuted),
+              onSelected: (_) => onRemove!(),
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'remove', child: Text('Remove from channel')),
+              ],
+            ),
         ],
       ),
     );
@@ -78,16 +94,16 @@ class MemberRow extends StatelessWidget {
     if (isOffline) {
       return Text('offline', style: TextStyle(color: context.textMuted, fontSize: 13));
     }
-    if (member.activeInChannel) {
+    if (role != null && role != ChannelRole.member) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
           color: context.pillBg,
           borderRadius: BorderRadius.circular(999),
         ),
-        child: const Text(
-          'on channel',
-          style: TextStyle(color: AppColors.orange, fontSize: 12, fontWeight: FontWeight.w600),
+        child: Text(
+          role!.label,
+          style: const TextStyle(color: AppColors.orange, fontSize: 12, fontWeight: FontWeight.w600),
         ),
       );
     }

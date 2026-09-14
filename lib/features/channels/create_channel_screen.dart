@@ -4,10 +4,11 @@ import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../models/channel.dart';
-import '../../services/database_service.dart';
+import '../../services/channels_service.dart';
 
 /// Create Channel screen (spec §11): name/description/privacy/max members,
-/// then shows a share code + QR code for the new channel.
+/// then shows a share code + QR code for the new channel. Real Supabase
+/// channel creation (Phase 4) via the create_channel RPC.
 class CreateChannelScreen extends ConsumerStatefulWidget {
   const CreateChannelScreen({super.key});
 
@@ -21,6 +22,8 @@ class _CreateChannelScreenState extends ConsumerState<CreateChannelScreen> {
   final _maxMembersCtrl = TextEditingController(text: '10');
   ChannelPrivacy _privacy = ChannelPrivacy.private;
   VoiceChannel? _created;
+  bool _loading = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -30,15 +33,39 @@ class _CreateChannelScreenState extends ConsumerState<CreateChannelScreen> {
     super.dispose();
   }
 
-  void _create() {
-    if (_nameCtrl.text.trim().isEmpty) return;
-    final channel = ref.read(databaseServiceProvider.notifier).createChannel(
-          name: _nameCtrl.text.trim(),
-          description: _descCtrl.text.trim(),
-          privacy: _privacy,
-          maxMembers: int.tryParse(_maxMembersCtrl.text) ?? 10,
-        );
-    setState(() => _created = channel);
+  Future<void> _create() async {
+    if (_nameCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'Enter a channel name.');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final repo = ref.read(channelsRepositoryProvider);
+      final id = await repo.createChannel(
+        name: _nameCtrl.text.trim(),
+        description: _descCtrl.text.trim(),
+        privacy: _privacy,
+        maxMembers: int.tryParse(_maxMembersCtrl.text) ?? 10,
+      );
+      final channel = await repo.fetchChannel(id);
+      refreshChannelsProviders(ref);
+      if (!mounted) return;
+      setState(() {
+        _created = channel;
+        _loading = false;
+      });
+    } on Object catch (e) {
+      if (!mounted) return;
+      final text = e.toString();
+      final match = RegExp(r'message: ([^,]+)').firstMatch(text);
+      setState(() {
+        _error = match?.group(1) ?? text;
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -83,11 +110,17 @@ class _CreateChannelScreenState extends ConsumerState<CreateChannelScreen> {
           keyboardType: TextInputType.number,
           decoration: const InputDecoration(labelText: 'Maximum Members', border: OutlineInputBorder()),
         ),
+        if (_error != null) ...[
+          const SizedBox(height: 8),
+          Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        ],
         const SizedBox(height: 24),
         FilledButton(
-          onPressed: _create,
+          onPressed: _loading ? null : _create,
           style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
-          child: const Text('CREATE'),
+          child: _loading
+              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('CREATE'),
         ),
       ],
     );

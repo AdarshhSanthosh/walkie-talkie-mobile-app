@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 
 import '../../app/theme.dart';
 import '../../models/channel.dart';
-import '../../services/database_service.dart';
-import '../../services/friends_service.dart';
+import '../../models/channel_member.dart';
+import '../../models/presence_status.dart';
+import '../../services/channels_service.dart';
 import '../../services/transmission_log_service.dart';
 import '../../services/webrtc_service.dart';
 import '../voice/talk_button.dart';
@@ -14,6 +17,7 @@ import 'widgets/transmission_row.dart';
 /// Channel screen, styled after the design reference
 /// (https://friend-chatterbox.lovable.app): header with online count,
 /// a FRIENDS list, a RECENT transmissions log, and the big TALK button.
+/// Channel + membership are real Supabase data (Phase 4).
 class ChannelScreen extends ConsumerWidget {
   final String channelId;
 
@@ -21,31 +25,55 @@ class ChannelScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final channels = ref.watch(databaseServiceProvider);
-    VoiceChannel? channel;
-    for (final c in channels) {
-      if (c.id == channelId) {
-        channel = c;
-        break;
-      }
-    }
-    final members = ref.watch(friendsListProvider).value ?? [];
-    final onlineCount = ref.watch(onlineCountProvider).value ?? 0;
+    final channel = ref.watch(channelProvider(channelId)).value;
+    final members = ref.watch(channelMembersProvider(channelId)).value ?? [];
+    final onlineCount = members.where((m) => m.profile.status == PresenceStatus.online).length;
     final session = ref.watch(webRtcServiceProvider);
     final recent = ref.watch(transmissionLogServiceProvider);
+    final myUid = sb.Supabase.instance.client.auth.currentUser?.id;
+    final myRole = members.where((m) => m.userId == myUid).map((m) => m.role).firstOrNull;
 
     if (channel == null) {
-      return Scaffold(
-        appBar: AppBar(),
-        body: const Center(child: Text('Channel not found')),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    Future<void> removeMember(ChannelMember m) async {
+      try {
+        await ref.read(channelsRepositoryProvider).removeMember(channelId, m.userId);
+        refreshChannelsProviders(ref, channelId: channelId);
+      } on Object catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_friendlyError(e))));
+      }
+    }
+
+    Future<void> leaveOrDelete(bool isOwner) async {
+      try {
+        final repo = ref.read(channelsRepositoryProvider);
+        if (isOwner) {
+          await repo.deleteChannel(channelId);
+        } else {
+          await repo.leaveChannel(channelId);
+        }
+        refreshChannelsProviders(ref, channelId: channelId);
+        if (!context.mounted) return;
+        context.go('/home');
+      } on Object catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_friendlyError(e))));
+      }
     }
 
     return Scaffold(
       body: SafeArea(
         child: Column(
           children: [
-            _Header(channel: channel, onlineCount: onlineCount),
+            _Header(
+              channel: channel,
+              onlineCount: onlineCount,
+              isOwner: myRole == ChannelRole.owner,
+              onLeaveOrDelete: () => leaveOrDelete(myRole == ChannelRole.owner),
+            ),
             const SizedBox(height: 4),
             Text(
               session.speakerName != null
@@ -60,9 +88,18 @@ class ChannelScreen extends ConsumerWidget {
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 children: [
-                  _sectionLabel(context, 'FRIENDS'),
+                  _sectionLabel(context, 'MEMBERS'),
                   const SizedBox(height: 8),
-                  for (final m in members) MemberRow(member: m),
+                  for (final m in members)
+                    MemberRow(
+                      member: m.profile,
+                      role: m.role,
+                      onRemove: (myRole == ChannelRole.owner || myRole == ChannelRole.admin) &&
+                              m.userId != channel.ownerId &&
+                              m.userId != myUid
+                          ? () => removeMember(m)
+                          : null,
+                    ),
                   const SizedBox(height: 8),
                   _sectionLabel(context, 'RECENT'),
                   const SizedBox(height: 8),
@@ -80,6 +117,12 @@ class ChannelScreen extends ConsumerWidget {
     );
   }
 
+  String _friendlyError(Object e) {
+    final text = e.toString();
+    final match = RegExp(r'message: ([^,]+)').firstMatch(text);
+    return match?.group(1) ?? text;
+  }
+
   Widget _sectionLabel(BuildContext context, String text) => Text(
         text,
         style: TextStyle(
@@ -91,11 +134,22 @@ class ChannelScreen extends ConsumerWidget {
       );
 }
 
+extension<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
+}
+
 class _Header extends StatelessWidget {
   final VoiceChannel channel;
   final int onlineCount;
+  final bool isOwner;
+  final VoidCallback onLeaveOrDelete;
 
-  const _Header({required this.channel, required this.onlineCount});
+  const _Header({
+    required this.channel,
+    required this.onlineCount,
+    required this.isOwner,
+    required this.onLeaveOrDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -147,6 +201,16 @@ class _Header extends StatelessWidget {
                 Text('$onlineCount online', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
               ],
             ),
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (_) => onLeaveOrDelete(),
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'leave_or_delete',
+                child: Text(isOwner ? 'Delete channel' : 'Leave channel'),
+              ),
+            ],
           ),
         ],
       ),

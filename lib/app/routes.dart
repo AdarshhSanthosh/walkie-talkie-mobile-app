@@ -5,6 +5,7 @@ import '../features/auth/signup_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/channels/channel_screen.dart';
 import '../features/channels/create_channel_screen.dart';
+import '../features/channels/join_channel_screen.dart';
 import '../features/home/home_shell.dart';
 import '../features/settings/blocked_users_screen.dart';
 
@@ -20,6 +21,7 @@ final appRouter = GoRouter(
       path: '/create-channel',
       builder: (context, state) => const CreateChannelScreen(),
     ),
+    GoRoute(path: '/join-channel', builder: (context, state) => const JoinChannelScreen()),
     GoRoute(
       path: '/channel/:id',
       builder: (context, state) => ChannelScreen(channelId: state.pathParameters['id']!),

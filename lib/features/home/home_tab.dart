@@ -4,13 +4,13 @@ import 'package:go_router/go_router.dart';
 
 import '../../models/channel.dart';
 import '../../models/presence_status.dart';
-import '../../services/database_service.dart';
+import '../../services/channels_service.dart';
 import '../../services/friends_service.dart';
 import '../../services/profile_service.dart';
 
 /// Home screen (spec §11): greeting, online friends preview, channel list,
-/// create-channel entry point. Friends are real (spec §4, Phase 3);
-/// channels are still mocked via [databaseServiceProvider] until Phase 4.
+/// create/join-channel entry points. Friends (Phase 3) and channels
+/// (Phase 4) are both real Supabase data now.
 class HomeTab extends ConsumerWidget {
   const HomeTab({super.key});
 
@@ -25,7 +25,7 @@ class HomeTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final friends = ref.watch(friendsListProvider).value ?? [];
     final onlineFriends = friends.where((f) => f.status == PresenceStatus.online).toList();
-    final channels = ref.watch(databaseServiceProvider);
+    final channels = ref.watch(myChannelsProvider).value ?? [];
     final profile = ref.watch(profileServiceProvider);
     final name = profile.value?.displayName ?? '';
 
@@ -55,23 +55,36 @@ class HomeTab extends ConsumerWidget {
           const SizedBox(height: 24),
           Text('My Channels', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          ...channels.map(
-            (c) => Card(
-              child: ListTile(
-                leading: Text(c.emoji, style: const TextStyle(fontSize: 24)),
-                title: Text(c.name),
-                subtitle: Text('${c.memberCount} members · ${c.privacy.label}'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push('/channel/${c.id}'),
+          if (channels.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('No channels yet — create one or join with a code.'),
+            )
+          else
+            ...channels.map(
+              (c) => Card(
+                child: ListTile(
+                  leading: Text(c.emoji, style: const TextStyle(fontSize: 24)),
+                  title: Text(c.name),
+                  subtitle: Text('${c.memberCount} members · ${c.privacy.label}'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/channel/${c.id}'),
+                ),
               ),
             ),
-          ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: () => context.push('/create-channel'),
             icon: const Icon(Icons.add),
             label: const Text('CREATE CHANNEL'),
             style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => context.push('/join-channel'),
+            icon: const Icon(Icons.qr_code),
+            label: const Text('JOIN WITH A CODE'),
+            style: OutlinedButton.styleFrom(padding: const EdgeInsets.all(16)),
           ),
         ],
       ),

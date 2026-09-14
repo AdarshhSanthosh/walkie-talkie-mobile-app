@@ -13,6 +13,15 @@ extension ChannelPrivacyX on ChannelPrivacy {
 /// Roles within a channel (spec §5).
 enum ChannelRole { owner, admin, moderator, member }
 
+extension ChannelRoleX on ChannelRole {
+  String get label => switch (this) {
+        ChannelRole.owner => 'Owner',
+        ChannelRole.admin => 'Admin',
+        ChannelRole.moderator => 'Mod',
+        ChannelRole.member => 'Member',
+      };
+}
+
 /// A voice channel (spec §5, §12).
 class VoiceChannel {
   final String id;
