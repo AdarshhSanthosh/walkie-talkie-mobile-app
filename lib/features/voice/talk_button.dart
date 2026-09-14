@@ -10,21 +10,20 @@ import '../../services/webrtc_service.dart';
 ///
 /// Uses press-and-hold (onTapDown/onTapUp/onTapCancel) rather than a plain
 /// tap, so releasing — including dragging off the button — always stops
-/// transmission. Phase 5 swaps the fake `startTalking`/`stopTalking` calls
-/// for real mic-permission + WebRTC start/stop.
+/// transmission. Real mic-permission + WebRTC start/stop (Phase 5).
 class TalkButton extends ConsumerWidget {
-  final String displayName;
+  final String channelId;
 
-  const TalkButton({super.key, this.displayName = 'You'});
+  const TalkButton({super.key, required this.channelId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(webRtcServiceProvider);
-    final notifier = ref.read(webRtcServiceProvider.notifier);
+    final session = ref.watch(webRtcServiceProvider(channelId));
+    final notifier = ref.read(webRtcServiceProvider(channelId).notifier);
     final speaking = session.isTransmitting;
 
     return GestureDetector(
-      onTapDown: (_) => notifier.startTalking(displayName: displayName),
+      onTapDown: (_) => notifier.startTalking(),
       onTapUp: (_) => notifier.stopTalking(),
       onTapCancel: () => notifier.stopTalking(),
       child: SizedBox(

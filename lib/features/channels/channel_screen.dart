@@ -6,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import '../../app/theme.dart';
 import '../../models/channel.dart';
 import '../../models/channel_member.dart';
-import '../../models/presence_status.dart';
+import '../../models/voice_connection_state.dart';
 import '../../services/channels_service.dart';
 import '../../services/transmission_log_service.dart';
 import '../../services/webrtc_service.dart';
@@ -27,8 +27,11 @@ class ChannelScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final channel = ref.watch(channelProvider(channelId)).value;
     final members = ref.watch(channelMembersProvider(channelId)).value ?? [];
-    final onlineCount = members.where((m) => m.profile.status == PresenceStatus.online).length;
-    final session = ref.watch(webRtcServiceProvider);
+    final session = ref.watch(webRtcServiceProvider(channelId));
+    // Real-time voice presence (who's actually connected right now) is a
+    // more accurate "online" count than the static `profiles.status`
+    // column, which nothing updates yet.
+    final onlineCount = session.peerCount + (session.connection != VoiceConnectionState.lost ? 1 : 0);
     final recent = ref.watch(transmissionLogServiceProvider);
     final myUid = sb.Supabase.instance.client.auth.currentUser?.id;
     final myRole = members.where((m) => m.userId == myUid).map((m) => m.role).firstOrNull;
@@ -80,9 +83,20 @@ class ChannelScreen extends ConsumerWidget {
                   ? (session.speakerName == 'You'
                       ? '🎙 You are transmitting'
                       : '🎙 ${session.speakerName} is transmitting')
-                  : 'channel quiet',
+                  : (session.connection == VoiceConnectionState.connecting
+                      ? 'Connecting...'
+                      : 'channel quiet'),
               style: TextStyle(color: context.textMuted, fontSize: 13),
             ),
+            if (session.error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  session.error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              ),
             const SizedBox(height: 16),
             Expanded(
               child: ListView(
@@ -109,7 +123,7 @@ class ChannelScreen extends ConsumerWidget {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
-              child: TalkButton(displayName: 'You'),
+              child: TalkButton(channelId: channelId),
             ),
           ],
         ),

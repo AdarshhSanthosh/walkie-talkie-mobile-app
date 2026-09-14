@@ -2,6 +2,10 @@
     <!-- Required for release builds too, not just debug: the app talks to
          Supabase (auth/DB/realtime) and later WebRTC/FCM over the network. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Phase 5: push-to-talk voice (spec §6). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <application
         android:label="walkie_talkie"
         android:name="${applicationName}"

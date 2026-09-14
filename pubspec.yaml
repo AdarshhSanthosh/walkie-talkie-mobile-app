@@ -39,6 +39,11 @@ dependencies:
   shared_preferences: ^2.5.5
   qr_flutter: ^4.1.0
   supabase_flutter: ^2.17.2
+  flutter_webrtc: ^1.6.2+hotfix.1
+  # Pinned below 13.x: permission_handler_android 14.1.0's Gradle script
+  # uses a Kotlin DSL form our AGP/Kotlin combo can't parse
+  # ("Unresolved reference: compilerOptions" in its build.gradle.kts).
+  permission_handler: 11.3.1
 
 dev_dependencies:
   flutter_test:

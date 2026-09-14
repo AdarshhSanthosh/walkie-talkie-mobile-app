@@ -6,7 +6,8 @@ spec discussed with the team for the end-to-end vision. This repo has:
 - **Phase 1** done: a runnable UI scaffold with mock data.
 - **Phase 2** done: real Supabase authentication + profiles (verified live).
 - **Phase 3** done: real friends, requests, and blocking (verified live).
-- **Phase 4** done: real channels, membership, and basic permissions.
+- **Phase 4** done: real channels, membership, and basic permissions (verified live).
+- **Phase 5** done: real WebRTC push-to-talk voice + signaling (verified live for signaling; see caveat below).
 
 Visual design is matched to the reference at
 [friend-chatterbox.lovable.app](https://friend-chatterbox.lovable.app) ("Holler"):
@@ -24,18 +25,47 @@ it's modeled on.
 | Auth (email/password) | ✅ Real (Supabase Auth) — verified live |
 | Profiles (`profiles` table, display name shown on Home) | ✅ Real (Supabase Postgres) — verified live |
 | Friends: search, requests, accept/reject, remove, block/unblock | ✅ Real (Supabase Postgres + RPCs) — verified live |
-| Channels: create, join by code, leave, delete, remove member | ✅ Real (Supabase Postgres + RPCs) |
+| Channels: create, join by code, leave, delete, remove member | ✅ Real (Supabase Postgres + RPCs) — verified live |
+| Push-to-talk voice: mic permission, WebRTC mesh, live signaling/presence | ✅ Real (`flutter_webrtc` + Supabase Realtime) — signaling verified live across two real peers |
 | Theme (Light/Dark/System), persisted | ✅ Real (`shared_preferences`) |
-| TALK button (press-and-hold, haptics, local speaking state) | ✅ Real interaction, no real audio |
-| Create Channel → invite code + QR code | ✅ Real, backed by a real channel row now |
+| Create Channel → invite code + QR code | ✅ Real, backed by a real channel row |
 | Auth (Google, Apple) | 🟡 Wired, but needs providers enabled in the Supabase dashboard first |
 | Channel moderation (mute/ban/role changes) | 🟡 Schema ready (`muted`/`banned`/`role` columns), no RPCs/UI wired yet |
-| Voice (WebRTC), push notifications (FCM), Bluetooth routing | ⬜ Not implemented yet |
+| Actual audio connectivity between peers | 🟡 Signaling confirmed working; media (ICE/RTP) not yet confirmed — see caveat |
+| Push notifications (FCM), Bluetooth routing | ⬜ Not implemented yet |
 
-Every "fake" piece lives behind a service class in [lib/services/](lib/services/),
+Every piece now lives behind a service class in [lib/services/](lib/services/),
 each exposed as a Riverpod provider — `auth_service.dart`, `profile_service.dart`,
-`friends_service.dart`, and `channels_service.dart` are all real Supabase calls now;
-only `webrtc_service.dart` is still a fake, ready to be swapped in Phase 5.
+`friends_service.dart`, `channels_service.dart`, and `webrtc_service.dart` are
+all real now. Nothing is left mocked.
+
+### Voice architecture (Phase 5)
+
+`webrtc_service.dart` implements a **mesh** of direct WebRTC connections — one
+per other peer in the channel — signaled over a Supabase Realtime channel
+(`voice:{channelId}`). Realtime **presence** on that channel doubles as "who's
+listening right now" (replacing the old static `profiles.status`), carries
+each peer's live `speaking` flag (drives the "🎙 X is transmitting" text for
+everyone, not just the local user), and **broadcast** messages carry the
+SDP offer/answer/ICE-candidate exchange. This is a small-group design (spec
+§7 calls mesh fine for dev/testing); a production build with larger channels
+would swap this for an SFU without changing the public API
+(`startTalking`/`stopTalking`).
+
+**Caveat — verified so far**: on two real, separate peers (an Android
+emulator and an isolated headless Chrome instance, each running its own
+account), the full flow up through **signaling** was confirmed live: mic
+permission granted, Realtime presence showed both peers ("2 online"), and a
+real SDP offer/answer exchange happened between them. The ICE connection
+itself didn't complete in that test — STUN requests timed out on every
+network interface on the emulator side, consistent with this specific sandboxed
+dev environment restricting outbound UDP (needed for STUN/ICE) rather than
+an app bug; TCP-based signaling worked throughout. **This should be
+re-verified on two real devices on a normal network** (e.g. two phones on
+the same WiFi) before relying on it — that's a materially different network
+path than an emulator's virtualized NAT. If it turns out real networks also
+need help, the architecture already anticipates a TURN server (spec §7) —
+none is configured yet; only public STUN (`stun.l.google.com`).
 
 ## Project structure
 
@@ -51,7 +81,7 @@ lib/
 │   ├── channels/   # channel, create-channel, join-channel screens (real)
 │   ├── voice/       # TALK button widget
 │   └── settings/   # theme picker + blocked users
-├── services/       # auth/profile/friends/channels are real Supabase; webrtc is still fake
+├── services/       # all real Supabase/WebRTC now — no fakes left
 └── models/         # AppUser, VoiceChannel, ChannelMember, FriendRequest, enums
 supabase/
 ├── schema.sql           # profiles table + RLS + auto-create-on-signup trigger
@@ -84,6 +114,8 @@ supabase/
    "Allow new users to sign up" (User Signups section) and the Email
    provider itself are enabled — these are separate toggles from "Confirm
    email" and easy to miss.
+6. Realtime is on by default for new Supabase projects (needed for Phase 5
+   voice signaling/presence) — no extra setup unless you've changed it.
 
 Google/Apple sign-in additionally need their providers enabled under
 Authentication → Providers, plus your own Google Cloud / Apple Developer
@@ -104,6 +136,10 @@ hardware-accelerated via WHPX). Toolchain notes:
 - `ANDROID_HOME`/`JAVA_HOME` are set at the Windows user-env level, so a
   fresh terminal picks them up automatically; `flutter doctor` should show
   every row green.
+- `permission_handler` is pinned to `11.3.1` (not the latest `13.x`) —
+  `permission_handler_android 14.1.0`'s Gradle script fails to compile
+  against this project's AGP/Kotlin combo (`Unresolved reference:
+  compilerOptions`). Revisit the pin next time dependencies are bumped.
 
 ```bash
 flutter pub get
@@ -123,20 +159,20 @@ screen instead of crashing, with the same setup steps as above.
 the emulator only ever runs whatever was last installed on it, hot reload
 aside. It's easy to test against a stale build otherwise.
 
-`flutter analyze` and `flutter test` are both clean. Phases 1–3 have been
-verified live end-to-end on the emulator (sign up → confirm → log in → real
-name shown → friend request → accept → block/unblock, across two real test
-accounts). Phase 4 (channels) is written and analyzed against the same live
-project, pending a live run-through — see "Next steps".
+`flutter analyze` and `flutter test` are both clean. Phases 1–4 have been
+verified live end-to-end (sign up → confirm → log in → real name shown →
+friend request → accept → block/unblock → create channel → join by code →
+remove/leave/delete, across two real test accounts). Phase 5's signaling
+layer is verified live the same way; full audio connectivity needs
+re-confirming on real devices — see the voice architecture caveat above.
 
 ## Next steps (later phases)
 
-1. **Finish verifying Phase 4 live** — run `channels_schema.sql`, then
-   create a channel, join it from a second account via its invite code,
-   remove a member, and leave/delete on the emulator.
-2. **Push-to-talk voice** — swap `webrtc_service.dart` for `flutter_webrtc` +
-   a signaling channel (WebSocket or Supabase Realtime), plus a TURN server.
-3. **Push notifications** — add Firebase Cloud Messaging (requires a
+1. **Confirm Phase 5 audio on real devices** — two phones on the same WiFi,
+   hold TALK on one, confirm the other hears it and the speaking indicator
+   updates. Set up a TURN server (e.g. `coturn` or a managed provider) if
+   direct connections turn out to need help even off the emulator.
+2. **Push notifications** — add Firebase Cloud Messaging (requires a
    Firebase project).
-4. Reconnection handling, Bluetooth audio routing, accessibility polish,
-   full Android/iOS device testing, and store release prep.
+3. Reconnection handling (spec §19), Bluetooth audio routing, accessibility
+   polish, full Android/iOS device testing, and store release prep.
