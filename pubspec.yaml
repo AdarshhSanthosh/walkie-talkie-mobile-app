@@ -1,5 +1,5 @@
 name: walkie_talkie
-description: "A new Flutter project."
+description: "Chick Talk — cross-platform push-to-talk voice app."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -56,6 +56,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -98,3 +99,28 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+  assets:
+    - assets/icon/
+
+# flutter_launcher_icons config (run: dart run flutter_launcher_icons)
+# Source is a full-bleed square (background color fills the whole canvas,
+# no pre-baked corner rounding) so each platform's own mask shape — iOS's
+# squircle, Android's adaptive-icon shape — applies cleanly on top.
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon_source.png"
+  adaptive_icon_background: "#FDCC26"
+  adaptive_icon_foreground: "assets/icon/app_icon_source.png"
+  min_sdk_android: 21
+  web:
+    generate: true
+    image_path: "assets/icon/app_icon_source.png"
+    background_color: "#FDCC26"
+    theme_color: "#FDCC26"
+  windows:
+    generate: true
+    image_path: "assets/icon/app_icon_source.png"
+  macos:
+    generate: true
+    image_path: "assets/icon/app_icon_source.png"

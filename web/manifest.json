@@ -1,11 +1,11 @@
 {
-    "name": "walkie_talkie",
-    "short_name": "walkie_talkie",
+    "name": "Chick Talk",
+    "short_name": "Chick Talk",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FDCC26",
+    "theme_color": "#FDCC26",
+    "description": "Chick Talk — cross-platform push-to-talk voice app.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

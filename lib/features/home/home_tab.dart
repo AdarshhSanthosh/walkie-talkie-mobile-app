@@ -33,7 +33,7 @@ class HomeTab extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Walkie Talkie'),
+        title: const Text('Chick Talk'),
         actions: [
           IconButton(
             onPressed: () => context.push('/notifications'),

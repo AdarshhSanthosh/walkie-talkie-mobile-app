@@ -13,7 +13,7 @@ class WalkieTalkieApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeControllerProvider);
     return MaterialApp.router(
-      title: 'Walkie Talkie',
+      title: 'Chick Talk',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,

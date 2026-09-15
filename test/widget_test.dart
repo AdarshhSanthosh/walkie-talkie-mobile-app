@@ -24,7 +24,7 @@ void main() {
     await tester.pumpWidget(const ProviderScope(child: WalkieTalkieApp()));
     await tester.pump();
 
-    expect(find.text('Walkie Talkie'), findsOneWidget);
+    expect(find.text('Chick Talk'), findsOneWidget);
     expect(find.text('Loading...'), findsOneWidget);
 
     // Let the splash screen's redirect timer fire before the test ends.

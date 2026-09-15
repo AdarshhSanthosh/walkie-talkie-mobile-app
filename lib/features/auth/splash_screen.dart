@@ -33,10 +33,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.podcasts_rounded, size: 96, color: colors.onPrimary),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: Image.asset('assets/icon/app_icon_source.png', width: 96, height: 96),
+            ),
             const SizedBox(height: 16),
             Text(
-              'Walkie Talkie',
+              'Chick Talk',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     color: colors.onPrimary,
                     fontWeight: FontWeight.bold,

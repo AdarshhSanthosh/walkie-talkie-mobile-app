@@ -1,7 +1,9 @@
-# Walkie Talkie
+# Chick Talk
 
-Cross-platform push-to-talk voice app (Flutter/Dart). See the full product
-spec discussed with the team for the end-to-end vision. This repo has:
+Cross-platform push-to-talk voice app (Flutter/Dart), branded **Chick Talk**
+(app icon + display name — see the branding section below). See the full
+product spec discussed with the team for the end-to-end vision. This repo
+has:
 
 - **Phase 1** done: a runnable UI scaffold with mock data.
 - **Phase 2** done: real Supabase authentication + profiles (verified live).
@@ -20,6 +22,28 @@ highlights, and a mint-green online indicator. See [lib/app/theme.dart](lib/app/
 for the palette and [lib/features/channels/channel_screen.dart](lib/features/channels/channel_screen.dart)
 for the channel layout (member list + recent transmissions + big TALK button)
 it's modeled on.
+
+## Branding
+
+App icon and display name ("Chick Talk") are real, generated via
+`flutter_launcher_icons` from [assets/icon/app_icon_source.png](assets/icon/app_icon_source.png)
+(a full-bleed square — the provided artwork's black corners were flood-filled
+with its yellow background so each platform's own mask shape, e.g. iOS's
+squircle or Android's adaptive-icon shape, applies cleanly instead of
+clipping a pre-rounded image). Covers Android (including the adaptive icon,
+background color `#FDCC26`), iOS, web (manifest + favicon), Windows, and
+macOS. Regenerate after replacing the source image with
+`dart run flutter_launcher_icons`. Verified live: the emulator's launcher
+shows the new icon and the "Chick Talk" label, and the in-app title/splash
+text was updated to match (`lib/app/app.dart`, `lib/features/home/home_tab.dart`,
+`lib/features/auth/splash_screen.dart`).
+
+**Not changed**: the underlying package/application identifiers
+(`com.walkietalkie.walkie_talkie` on Android, matching on iOS/macOS) and the
+Dart package name (`walkie_talkie` in `pubspec.yaml`) are unchanged — those
+are a separate, harder-to-reverse decision (an app's store identifier is
+effectively permanent once published) and are worth deciding deliberately
+before Phase 10 release prep, not as a side effect of a rebrand.
 
 ## What's real vs. mocked right now
 
