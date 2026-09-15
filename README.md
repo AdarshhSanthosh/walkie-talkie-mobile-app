@@ -9,6 +9,7 @@ spec discussed with the team for the end-to-end vision. This repo has:
 - **Phase 4** done: real channels, membership, and basic permissions (verified live).
 - **Phase 5** done: real WebRTC push-to-talk voice + signaling (verified live for signaling; see caveat below).
 - **Phase 6** done: real in-app notifications + preferences (verified live; device push delivery pending a Firebase project — see below).
+- **Phase 7** done: reconnection handling, background behavior, and error surfacing (spec §19) (verified live).
 
 Visual design is matched to the reference at
 [friend-chatterbox.lovable.app](https://friend-chatterbox.lovable.app) ("Holler"):
@@ -36,13 +37,16 @@ it's modeled on.
 | Notifications: friend request/accept, channel-join alerts, read/unread inbox | ✅ Real (Supabase Postgres + RPCs) — verified live |
 | Notification preferences: 6 global toggles + per-channel All/Important/Muted | ✅ Real, persisted (Settings → Notifications; channel header menu) |
 | Actual push delivery to a device (FCM) | ⬜ Not wired — needs a Firebase project; `device_tokens` table is ready to receive tokens |
+| Reconnection (network loss, dropped signaling channel, failed peer connection) | ✅ Real — exponential backoff, auto-retry — verified live |
+| App lifecycle awareness (release mic on background, reconnect on resume) | ✅ Real (`WidgetsBindingObserver`) — verified live |
+| Global offline banner | ✅ Real (`connectivity_plus`) — verified live |
 | Bluetooth routing | ⬜ Not implemented yet |
 
 Every piece now lives behind a service class in [lib/services/](lib/services/),
 each exposed as a Riverpod provider — `auth_service.dart`, `profile_service.dart`,
-`friends_service.dart`, `channels_service.dart`, `webrtc_service.dart`, and
-`notifications_service.dart` are all real now. Nothing is left mocked except
-actual FCM push delivery (see Phase 6 section below).
+`friends_service.dart`, `channels_service.dart`, `webrtc_service.dart`,
+`notifications_service.dart`, and `connectivity_service.dart` are all real now.
+Nothing is left mocked except actual FCM push delivery (see Phase 6 section below).
 
 ### Notifications (Phase 6)
 
@@ -85,6 +89,50 @@ the same WiFi) before relying on it — that's a materially different network
 path than an emulator's virtualized NAT. If it turns out real networks also
 need help, the architecture already anticipates a TURN server (spec §7) —
 none is configured yet; only public STUN (`stun.l.google.com`).
+
+### Reconnection & resilience (Phase 7)
+
+`webrtc_service.dart` now tracks connection health explicitly
+(`VoiceConnectionState`: connecting/connected/reconnecting/lost) and reacts to
+three kinds of disruption, per spec §19:
+
+- **Network loss/regain** (`connectivity_service.dart`, wrapping
+  `connectivity_plus`): losing all interfaces immediately marks the session
+  `lost` and cancels any pending retry; regaining one resets the backoff and
+  retries right away instead of waiting out the current delay.
+- **Dropped signaling channel**: a Supabase Realtime `channelError`/
+  `timedOut`/`closed` callback schedules a reconnect with exponential
+  backoff (1s, 2s, 4s, ... capped at 30s), tearing down and rebuilding every
+  peer connection and re-subscribing to `voice:{channelId}`.
+- **One peer's connection failing** (`RTCPeerConnectionStateFailed`): only
+  that peer's connection is torn down and re-negotiated (same offerer
+  tie-break rule as initial connect); the rest of the session is undisturbed.
+
+App lifecycle is also handled directly (`WidgetsBindingObserver`, not just a
+widget-level check): backgrounding the app (`AppLifecycleState.paused`) stops
+any in-progress transmission and releases the mic; returning to the
+foreground (`resumed`) triggers an immediate reconnect if the session had
+been lost or was mid-backoff. A thin app-wide banner
+([lib/app/app.dart](lib/app/app.dart)) shows "No internet connection"
+whenever `connectivity_plus` reports no interface up, independent of whether
+a voice channel is even open. The channel screen's status line
+([lib/features/channels/channel_screen.dart](lib/features/channels/channel_screen.dart))
+now surfaces all four connection states (e.g. "🟡 Reconnecting..." / "🔴
+Connection lost"), not just connected-vs-connecting.
+
+**Verified live**: on the Pixel 8 emulator, disabling WiFi + mobile data
+(`adb shell svc wifi disable` / `svc data disable`) while sitting in an
+active channel immediately showed the "No internet connection" banner and
+flipped the channel status line to "🟡 Reconnecting..."; re-enabling both
+brought it straight back to "channel quiet" without waiting out the backoff
+timer. Separately, holding TALK (confirmed via screenshot: "🎙 You are
+transmitting" / button reading "TALKING") and then sending the device home
+button — backgrounding the app without ever releasing the button — produced
+a new entry in the RECENT transmissions log on the next foreground (e.g.
+"QA_Tester · 0:14") even though no release gesture ever reached the app while
+backgrounded; the only code path that can log a transmission is
+`stopTalking()`, so this confirms `didChangeAppLifecycleState`'s `paused`
+handler is what stopped it, not a coincidental release.
 
 ## Project structure
 
@@ -198,6 +246,8 @@ notification with a live unread badge on the recipient's Home screen,
 tapping it marked it read (persisted), and turning off "Friend Requests" in
 Settings → Notifications correctly suppressed a repeat notification for the
 same action — confirmed by checking the `notifications` table directly.
+Phase 7 has also been verified live on the emulator — see the reconnection
+& resilience section above for the specific scenarios tested.
 
 ## Next steps (later phases)
 
@@ -211,5 +261,5 @@ same action — confirmed by checking the `notifications` table directly.
    Edge Function (triggered by a Database Webhook on `notifications`
    inserts) that calls the FCM HTTP v1 API to actually push to the stored
    tokens.
-3. Reconnection handling (spec §19), Bluetooth audio routing, accessibility
-   polish, full Android/iOS device testing, and store release prep.
+3. Bluetooth audio routing, accessibility polish, full Android/iOS device
+   testing, and store release prep.

@@ -44,6 +44,7 @@ dependencies:
   # uses a Kotlin DSL form our AGP/Kotlin combo can't parse
   # ("Unresolved reference: compilerOptions" in its build.gradle.kts).
   permission_handler: 11.3.1
+  connectivity_plus: ^7.3.1
 
 dev_dependencies:
   flutter_test:

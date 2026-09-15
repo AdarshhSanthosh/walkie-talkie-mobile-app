@@ -93,9 +93,9 @@ class ChannelScreen extends ConsumerWidget {
                   ? (session.speakerName == 'You'
                       ? '🎙 You are transmitting'
                       : '🎙 ${session.speakerName} is transmitting')
-                  : (session.connection == VoiceConnectionState.connecting
-                      ? 'Connecting...'
-                      : 'channel quiet'),
+                  : (session.connection == VoiceConnectionState.connected
+                      ? 'channel quiet'
+                      : session.connection.label),
               style: TextStyle(color: context.textMuted, fontSize: 13),
             ),
             if (session.error != null)

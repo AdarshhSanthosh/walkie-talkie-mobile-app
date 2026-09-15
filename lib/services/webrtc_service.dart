@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 
 import '../models/voice_connection_state.dart';
+import 'connectivity_service.dart';
 import 'profile_service.dart';
 import 'transmission_log_service.dart';
 
@@ -16,6 +19,8 @@ const _iceServers = {
     {'urls': 'stun:stun1.l.google.com:19302'},
   ],
 };
+
+const _maxReconnectDelay = Duration(seconds: 30);
 
 /// Push-to-talk voice session for one channel (Phase 5, spec §6/§7).
 ///
@@ -28,6 +33,13 @@ const _iceServers = {
 /// mesh fine for dev/testing groups); a production build with larger
 /// channels would swap this for an SFU without changing the public API
 /// below (`startTalking`/`stopTalking`).
+///
+/// Phase 7 (spec §19) adds resilience: dropped signaling reconnects with
+/// exponential backoff, a regained network connection triggers an
+/// immediate retry, individual failed peer connections are re-established
+/// without tearing down the whole session, and backgrounding the app
+/// releases the mic (Android/iOS won't reliably keep it live in the
+/// background without a foreground service, which this app doesn't run).
 class VoiceSessionState {
   final VoiceConnectionState connection;
   final bool isTransmitting;
@@ -62,7 +74,7 @@ class VoiceSessionState {
   }
 }
 
-class WebRtcService extends Notifier<VoiceSessionState> {
+class WebRtcService extends Notifier<VoiceSessionState> with WidgetsBindingObserver {
   WebRtcService(this.channelId);
 
   final String channelId;
@@ -76,12 +88,48 @@ class WebRtcService extends Notifier<VoiceSessionState> {
   String _myName = 'You';
   DateTime? _talkStartedAt;
   bool _disposed = false;
+  bool _wasOnline = true;
+  int _reconnectAttempts = 0;
+  Timer? _reconnectTimer;
 
   @override
   VoiceSessionState build() {
+    WidgetsBinding.instance.addObserver(this);
     ref.onDispose(_disposeAll);
+    ref.listen(isOnlineProvider, (previous, next) => _onConnectivityChanged(next.value));
     _init();
     return const VoiceSessionState(connection: VoiceConnectionState.connecting);
+  }
+
+  // Intentionally not named `state`: that would shadow the Notifier's own
+  // `state` property, which the method body below reads.
+  @override
+  // ignore: avoid_renaming_method_parameters
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    // Spec §19: respect background mic/networking restrictions — release
+    // the mic rather than assume it stays live once backgrounded.
+    if (lifecycleState == AppLifecycleState.paused) {
+      unawaited(stopTalking());
+    } else if (lifecycleState == AppLifecycleState.resumed) {
+      if (state.connection == VoiceConnectionState.lost ||
+          state.connection == VoiceConnectionState.reconnecting) {
+        _reconnect();
+      }
+    }
+  }
+
+  void _onConnectivityChanged(bool? isOnline) {
+    if (isOnline == null || isOnline == _wasOnline) return;
+    _wasOnline = isOnline;
+    if (!isOnline) {
+      _reconnectTimer?.cancel();
+      state = state.copyWith(connection: VoiceConnectionState.lost);
+    } else if (state.connection == VoiceConnectionState.lost ||
+        state.connection == VoiceConnectionState.reconnecting) {
+      // Network's back — retry right away instead of waiting out backoff.
+      _reconnectAttempts = 0;
+      _reconnect();
+    }
   }
 
   Future<void> _init() async {
@@ -109,6 +157,10 @@ class WebRtcService extends Notifier<VoiceSessionState> {
     }
     if (_disposed) return;
 
+    _connectSignaling();
+  }
+
+  void _connectSignaling() {
     _signal = _client.channel(
       'voice:$channelId',
       opts: sb.RealtimeChannelConfig(key: _myUid),
@@ -122,12 +174,38 @@ class WebRtcService extends Notifier<VoiceSessionState> {
       ..subscribe((status, error) async {
         if (_disposed) return;
         if (status == sb.RealtimeSubscribeStatus.subscribed) {
+          _reconnectTimer?.cancel();
+          _reconnectAttempts = 0;
           await _signal!.track({'display_name': _myName, 'speaking': false});
+          _onPresenceChange();
         } else if (status == sb.RealtimeSubscribeStatus.channelError ||
-            status == sb.RealtimeSubscribeStatus.timedOut) {
-          state = state.copyWith(connection: VoiceConnectionState.lost);
+            status == sb.RealtimeSubscribeStatus.timedOut ||
+            status == sb.RealtimeSubscribeStatus.closed) {
+          _scheduleReconnect();
         }
       });
+  }
+
+  /// Exponential backoff, capped at 30s (spec §19: "Retry → Retry → Retry
+  /// → Connected", not a hot retry loop that hammers the server).
+  void _scheduleReconnect() {
+    if (_disposed) return;
+    state = state.copyWith(connection: VoiceConnectionState.reconnecting);
+    _reconnectTimer?.cancel();
+    final delaySeconds = min(pow(2, _reconnectAttempts).toInt(), _maxReconnectDelay.inSeconds);
+    _reconnectAttempts++;
+    _reconnectTimer = Timer(Duration(seconds: delaySeconds), _reconnect);
+  }
+
+  void _reconnect() {
+    if (_disposed) return;
+    state = state.copyWith(connection: VoiceConnectionState.reconnecting);
+    for (final pc in _peers.values) {
+      pc.close();
+    }
+    _peers.clear();
+    unawaited(_signal?.unsubscribe());
+    _connectSignaling();
   }
 
   void _onPeerJoin(String otherId) {
@@ -199,7 +277,19 @@ class WebRtcService extends Notifier<VoiceSessionState> {
         'sdpMLineIndex': candidate.sdpMLineIndex,
       }));
     };
-    pc.onConnectionState = (_) => _onPresenceChange();
+    pc.onConnectionState = (connectionState) {
+      _onPresenceChange();
+      // A single peer's link failing shouldn't take down the whole
+      // session — just re-establish that one connection if they're still
+      // around (spec §19: recover from WebRTC failures).
+      if (connectionState == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
+        _peers.remove(otherId)?.close();
+        final stillPresent = _signal?.presenceState().any((s) => s.key == otherId) ?? false;
+        if (stillPresent && _myUid.compareTo(otherId) > 0) {
+          unawaited(_startConnection(otherId, isOfferer: true));
+        }
+      }
+    };
 
     return pc;
   }
@@ -286,6 +376,8 @@ class WebRtcService extends Notifier<VoiceSessionState> {
 
   void _disposeAll() {
     _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
+    _reconnectTimer?.cancel();
     for (final pc in _peers.values) {
       pc.close();
     }
