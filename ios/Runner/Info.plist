@@ -26,6 +26,15 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Required for push-to-talk voice (spec §6) — iOS refuses mic access
+	     outright without this, unlike Android's manifest-only permission. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Chick Talk needs your microphone to let you talk on voice channels.</string>
+	<!-- iOS 14+ gates WebRTC's local-network ICE candidate gathering (finding
+	     peers on the same WiFi) behind this prompt; without it, connections
+	     to peers on the same network can silently fail. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Chick Talk uses your local network to connect voice calls to nearby devices.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
