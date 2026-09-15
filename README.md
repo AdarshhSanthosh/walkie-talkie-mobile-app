@@ -11,6 +11,7 @@ spec discussed with the team for the end-to-end vision. This repo has:
 - **Phase 6** done: real in-app notifications + preferences (verified live; device push delivery pending a Firebase project — see below).
 - **Phase 7** done: reconnection handling, background behavior, and error surfacing (spec §19) (verified live).
 - **Phase 8** done: Bluetooth-aware audio routing (spec §8) (verified live on the emulator; real Bluetooth-device routing needs a physical device — see below).
+- **Phase 9** partially done: a full regression pass across every screen on the Android emulator (verified live); real-device and iOS testing are blocked by this environment — see below.
 
 Visual design is matched to the reference at
 [friend-chatterbox.lovable.app](https://friend-chatterbox.lovable.app) ("Holler"):
@@ -115,6 +116,35 @@ auto-prefer-Bluetooth default and switching to an actual Bluetooth
 device haven't been confirmed** — the emulator has no Bluetooth audio
 hardware to enumerate, so that needs a real device with a paired Bluetooth
 headset (see Phase 9 below).
+
+### Device testing (Phase 9)
+
+Spec §9 calls for testing across real Android/iOS devices and OS versions.
+This machine is Windows-only with a single Android emulator (Pixel 8 / API
+34) — there is no Mac, so iOS builds/testing are categorically impossible
+here (`flutter doctor` doesn't even list an iOS toolchain to check), and no
+physical Android hardware is attached either.
+
+**What was actually done**: a full regression pass on the emulator across
+every screen, after Phases 1–8 were all stacked together, to catch anything
+one phase's changes broke in another — Home (online friends, channel list),
+Friends (search/empty state), Settings (Light/Dark/System theme switching,
+confirmed correct contrast in dark mode), Notifications inbox, and the
+Channel screen (members, recent log, TALK button, the new audio-route
+picker, and re-entering the channel repeatedly to rule out the
+`autoDispose` WebRTC session leaking state across navigations). No crashes
+or visual regressions found.
+
+**What still needs real hardware, owned by whoever has access to it**:
+
+- Any iOS testing at all (needs a Mac + Xcode + an Apple Developer account
+  for a physical device, or at minimum a Simulator run).
+- Real Android devices across a few manufacturers/OS versions — the
+  emulator is a reasonable proxy for logic bugs but not for OEM quirks
+  (background process killing being the big one for a voice app, plus
+  actual Bluetooth hardware per the Phase 8 caveat above).
+- Different physical screen sizes (small phones, tablets, foldables) —
+  everything so far has only run at the Pixel 8's 1080×2400.
 
 ### Reconnection & resilience (Phase 7)
 
@@ -276,6 +306,9 @@ Phase 7 has also been verified live on the emulator — see the reconnection
 & resilience section above for the specific scenarios tested. Phase 8 has
 also been verified live on the emulator to the extent the emulator's
 hardware allows — see the Bluetooth-aware audio routing section above.
+Phase 9 is a full regression pass across every screen, also on the
+emulator — see the device testing section above for exactly what that
+covered and what it couldn't (real hardware, iOS).
 
 ## Next steps (later phases)
 
@@ -292,5 +325,7 @@ hardware allows — see the Bluetooth-aware audio routing section above.
 3. **Confirm Phase 8 Bluetooth routing on a real device** — pair a Bluetooth
    headset, join a channel, confirm the call routes to it automatically and
    that the picker sheet lists it and switches correctly.
-4. Accessibility polish, full Android/iOS device testing (Phase 9), and
-   store release prep (Phase 10).
+4. **Finish Phase 9 on real hardware** — a few real Android devices/OS
+   versions, a Mac to build and test iOS at all, and a couple of different
+   physical screen sizes. None of this is possible on this machine.
+5. Accessibility polish and store release prep (Phase 10, see below).
