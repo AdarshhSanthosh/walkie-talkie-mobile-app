@@ -40,12 +40,19 @@ const _maxReconnectDelay = Duration(seconds: 30);
 /// without tearing down the whole session, and backgrounding the app
 /// releases the mic (Android/iOS won't reliably keep it live in the
 /// background without a foreground service, which this app doesn't run).
+///
+/// Phase 8 (spec §8) adds Bluetooth-aware audio routing: a call defaults to
+/// a connected Bluetooth device over the earpiece/speaker when one is
+/// available, the app listens for devices attaching/detaching mid-call and
+/// re-enumerates, and the user can override the route manually.
 class VoiceSessionState {
   final VoiceConnectionState connection;
   final bool isTransmitting;
   final String? speakerName;
   final int peerCount;
   final String? error;
+  final List<MediaDeviceInfo> audioOutputs;
+  final String? activeAudioOutputId;
 
   const VoiceSessionState({
     this.connection = VoiceConnectionState.connecting,
@@ -53,6 +60,8 @@ class VoiceSessionState {
     this.speakerName,
     this.peerCount = 0,
     this.error,
+    this.audioOutputs = const [],
+    this.activeAudioOutputId,
   });
 
   VoiceSessionState copyWith({
@@ -63,6 +72,8 @@ class VoiceSessionState {
     int? peerCount,
     String? error,
     bool clearError = false,
+    List<MediaDeviceInfo>? audioOutputs,
+    String? activeAudioOutputId,
   }) {
     return VoiceSessionState(
       connection: connection ?? this.connection,
@@ -70,6 +81,8 @@ class VoiceSessionState {
       speakerName: clearSpeaker ? null : (speakerName ?? this.speakerName),
       peerCount: peerCount ?? this.peerCount,
       error: clearError ? null : (error ?? this.error),
+      audioOutputs: audioOutputs ?? this.audioOutputs,
+      activeAudioOutputId: activeAudioOutputId ?? this.activeAudioOutputId,
     );
   }
 }
@@ -157,7 +170,47 @@ class WebRtcService extends Notifier<VoiceSessionState> with WidgetsBindingObser
     }
     if (_disposed) return;
 
+    _setupAudioRouting();
     _connectSignaling();
+  }
+
+  /// Best-effort audio routing (spec §8): prefer a connected Bluetooth
+  /// device over the earpiece/speaker, and keep the output list current as
+  /// devices attach/detach mid-call. Only iOS/Android support any of this
+  /// in `flutter_webrtc`, so every call here is wrapped — on web/desktop
+  /// (used during dev on this machine) these are no-ops, not crashes.
+  void _setupAudioRouting() {
+    unawaited(Helper.setSpeakerphoneOnButPreferBluetooth().catchError((_) {}));
+    try {
+      navigator.mediaDevices.ondevicechange = (_) => unawaited(_refreshAudioOutputs());
+    } on Object {
+      // Not supported on this platform — the manual picker just won't
+      // refresh itself when a device attaches/detaches.
+    }
+    unawaited(_refreshAudioOutputs());
+  }
+
+  Future<void> _refreshAudioOutputs() async {
+    if (_disposed) return;
+    try {
+      final outputs = await Helper.enumerateDevices('audiooutput');
+      if (_disposed) return;
+      state = state.copyWith(audioOutputs: outputs);
+    } on Object {
+      // Enumeration unsupported/unavailable here — leave the list as-is.
+    }
+  }
+
+  /// Manually override the audio output route (e.g. from a picker sheet).
+  /// The automatic Bluetooth preference in [_setupAudioRouting] only picks
+  /// a default when the call starts; this lets the user switch mid-call.
+  Future<void> setAudioOutput(String deviceId) async {
+    try {
+      await Helper.selectAudioOutput(deviceId);
+      state = state.copyWith(activeAudioOutputId: deviceId);
+    } on Object catch (e) {
+      state = state.copyWith(error: 'Could not switch audio output: $e');
+    }
   }
 
   void _connectSignaling() {
@@ -378,6 +431,11 @@ class WebRtcService extends Notifier<VoiceSessionState> with WidgetsBindingObser
     _disposed = true;
     WidgetsBinding.instance.removeObserver(this);
     _reconnectTimer?.cancel();
+    try {
+      navigator.mediaDevices.ondevicechange = null;
+    } on Object {
+      // Not supported on this platform — nothing to clear.
+    }
     for (final pc in _peers.values) {
       pc.close();
     }

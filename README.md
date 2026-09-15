@@ -10,6 +10,7 @@ spec discussed with the team for the end-to-end vision. This repo has:
 - **Phase 5** done: real WebRTC push-to-talk voice + signaling (verified live for signaling; see caveat below).
 - **Phase 6** done: real in-app notifications + preferences (verified live; device push delivery pending a Firebase project — see below).
 - **Phase 7** done: reconnection handling, background behavior, and error surfacing (spec §19) (verified live).
+- **Phase 8** done: Bluetooth-aware audio routing (spec §8) (verified live on the emulator; real Bluetooth-device routing needs a physical device — see below).
 
 Visual design is matched to the reference at
 [friend-chatterbox.lovable.app](https://friend-chatterbox.lovable.app) ("Holler"):
@@ -40,7 +41,7 @@ it's modeled on.
 | Reconnection (network loss, dropped signaling channel, failed peer connection) | ✅ Real — exponential backoff, auto-retry — verified live |
 | App lifecycle awareness (release mic on background, reconnect on resume) | ✅ Real (`WidgetsBindingObserver`) — verified live |
 | Global offline banner | ✅ Real (`connectivity_plus`) — verified live |
-| Bluetooth routing | ⬜ Not implemented yet |
+| Audio output routing (auto-prefer Bluetooth, manual picker) | ✅ Real (`flutter_webrtc` `Helper`) — enumeration/picker verified live; real BT-device routing needs a physical device |
 
 Every piece now lives behind a service class in [lib/services/](lib/services/),
 each exposed as a Riverpod provider — `auth_service.dart`, `profile_service.dart`,
@@ -89,6 +90,31 @@ the same WiFi) before relying on it — that's a materially different network
 path than an emulator's virtualized NAT. If it turns out real networks also
 need help, the architecture already anticipates a TURN server (spec §7) —
 none is configured yet; only public STUN (`stun.l.google.com`).
+
+### Bluetooth-aware audio routing (Phase 8)
+
+`webrtc_service.dart` calls `flutter_webrtc`'s `Helper.setSpeakerphoneOnButPreferBluetooth()`
+once the local mic stream is up, so a call defaults to a connected Bluetooth
+device over the earpiece/speaker without any user action (spec §8). It also
+listens for `navigator.mediaDevices.ondevicechange` and re-enumerates outputs
+whenever a device attaches or detaches mid-call (e.g. a headset connecting
+after the channel screen is already open). A new icon button in the channel
+header ([lib/features/voice/audio_route_picker.dart](lib/features/voice/audio_route_picker.dart))
+opens a sheet listing every enumerated output with an icon guessed from its
+label (Bluetooth/speaker/wired headset/earpiece) and a checkmark on the
+active one; picking one calls `Helper.selectAudioOutput(deviceId)`. All of
+this is wrapped defensively — enumeration/selection are iOS/Android-only in
+`flutter_webrtc`, so the button simply stays disabled (empty output list) on
+platforms that don't support it, rather than crashing.
+
+**Verified live**: on the Pixel 8 emulator, the button appeared enabled
+after joining a channel, and opening it correctly listed the emulator's one
+real output ("Speakerphone") with the matching speaker icon; selecting it
+called through to `Helper.selectAudioOutput` without error. **The
+auto-prefer-Bluetooth default and switching to an actual Bluetooth
+device haven't been confirmed** — the emulator has no Bluetooth audio
+hardware to enumerate, so that needs a real device with a paired Bluetooth
+headset (see Phase 9 below).
 
 ### Reconnection & resilience (Phase 7)
 
@@ -146,7 +172,7 @@ lib/
 │   ├── home/           # bottom-nav shell + home tab
 │   ├── friends/        # search, requests, friends list (real)
 │   ├── channels/       # channel, create-channel, join-channel screens (real)
-│   ├── voice/          # TALK button widget
+│   ├── voice/          # TALK button, audio output route picker
 │   ├── notifications/  # notifications inbox screen
 │   └── settings/       # theme picker, blocked users, notification prefs
 ├── services/       # all real Supabase/WebRTC now — no fakes left
@@ -247,7 +273,9 @@ tapping it marked it read (persisted), and turning off "Friend Requests" in
 Settings → Notifications correctly suppressed a repeat notification for the
 same action — confirmed by checking the `notifications` table directly.
 Phase 7 has also been verified live on the emulator — see the reconnection
-& resilience section above for the specific scenarios tested.
+& resilience section above for the specific scenarios tested. Phase 8 has
+also been verified live on the emulator to the extent the emulator's
+hardware allows — see the Bluetooth-aware audio routing section above.
 
 ## Next steps (later phases)
 
@@ -261,5 +289,8 @@ Phase 7 has also been verified live on the emulator — see the reconnection
    Edge Function (triggered by a Database Webhook on `notifications`
    inserts) that calls the FCM HTTP v1 API to actually push to the stored
    tokens.
-3. Bluetooth audio routing, accessibility polish, full Android/iOS device
-   testing, and store release prep.
+3. **Confirm Phase 8 Bluetooth routing on a real device** — pair a Bluetooth
+   headset, join a channel, confirm the call routes to it automatically and
+   that the picker sheet lists it and switches correctly.
+4. Accessibility polish, full Android/iOS device testing (Phase 9), and
+   store release prep (Phase 10).

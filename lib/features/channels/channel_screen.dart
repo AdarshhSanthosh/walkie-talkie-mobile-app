@@ -12,6 +12,7 @@ import '../../services/channels_service.dart';
 import '../../services/notifications_service.dart';
 import '../../services/transmission_log_service.dart';
 import '../../services/webrtc_service.dart';
+import '../voice/audio_route_picker.dart';
 import '../voice/talk_button.dart';
 import 'widgets/member_row.dart';
 import 'widgets/transmission_row.dart';
@@ -81,6 +82,7 @@ class ChannelScreen extends ConsumerWidget {
           children: [
             _Header(
               channel: channel,
+              channelId: channelId,
               onlineCount: onlineCount,
               isOwner: myRole == ChannelRole.owner,
               onLeaveOrDelete: () => leaveOrDelete(myRole == ChannelRole.owner),
@@ -164,6 +166,7 @@ extension<T> on Iterable<T> {
 
 class _Header extends StatelessWidget {
   final VoiceChannel channel;
+  final String channelId;
   final int onlineCount;
   final bool isOwner;
   final VoidCallback onLeaveOrDelete;
@@ -172,6 +175,7 @@ class _Header extends StatelessWidget {
 
   const _Header({
     required this.channel,
+    required this.channelId,
     required this.onlineCount,
     required this.isOwner,
     required this.onLeaveOrDelete,
@@ -230,6 +234,7 @@ class _Header extends StatelessWidget {
               ],
             ),
           ),
+          AudioRouteButton(channelId: channelId),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             onSelected: (value) {
