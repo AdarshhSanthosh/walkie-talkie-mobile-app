@@ -5,8 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../services/auth_service.dart';
 import 'theme_controller.dart';
 
-/// Settings screen (spec §20). Phase 1 delivers a real, working Appearance
-/// section; Account/Audio/Notifications/Privacy/Security are stubbed as
+/// Settings screen (spec §20). Appearance (Phase 1), Security (Phase 3),
+/// and Notifications (Phase 6) are real; Account/Audio/Privacy remain
 /// "coming soon" placeholders until their backing services exist.
 class SettingsTab extends ConsumerWidget {
   const SettingsTab({super.key});
@@ -36,7 +36,13 @@ class SettingsTab extends ConsumerWidget {
           const SizedBox(height: 24),
           const _ComingSoonSection(title: 'Account'),
           const _ComingSoonSection(title: 'Audio'),
-          const _ComingSoonSection(title: 'Notifications'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Notifications'),
+            subtitle: const Text('Friend requests, announcements, and more'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/notification-preferences'),
+          ),
           const _ComingSoonSection(title: 'Privacy'),
           ListTile(
             contentPadding: EdgeInsets.zero,

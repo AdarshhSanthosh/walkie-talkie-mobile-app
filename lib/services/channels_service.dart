@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import '../models/app_user.dart';
 import '../models/channel.dart';
 import '../models/channel_member.dart';
+import '../models/notification_preferences.dart';
 import '../models/presence_status.dart';
 import 'auth_service.dart';
 
@@ -42,7 +43,7 @@ class ChannelsRepository {
   Future<List<ChannelMember>> fetchMembers(String channelId) async {
     final rows = await _client
         .from('channel_members')
-        .select('user_id, role, muted, banned, joined_at, profiles(*)')
+        .select('user_id, role, muted, banned, joined_at, notification_level, profiles(*)')
         .eq('channel_id', channelId)
         .order('joined_at');
     return (rows as List).map((r) => _memberFromRow(r as Map<String, dynamic>)).toList();
@@ -108,6 +109,8 @@ class ChannelsRepository {
         banned: row['banned'] as bool? ?? false,
         joinedAt: DateTime.parse(row['joined_at'] as String),
         profile: _userFromProfileRow(row['profiles'] as Map<String, dynamic>),
+        notificationLevel:
+            ChannelNotificationLevelX.fromDb(row['notification_level'] as String? ?? 'all'),
       );
 
   AppUser _userFromProfileRow(Map<String, dynamic> row) => AppUser(

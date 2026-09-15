@@ -6,8 +6,10 @@ import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import '../../app/theme.dart';
 import '../../models/channel.dart';
 import '../../models/channel_member.dart';
+import '../../models/notification_preferences.dart';
 import '../../models/voice_connection_state.dart';
 import '../../services/channels_service.dart';
+import '../../services/notifications_service.dart';
 import '../../services/transmission_log_service.dart';
 import '../../services/webrtc_service.dart';
 import '../voice/talk_button.dart';
@@ -34,10 +36,16 @@ class ChannelScreen extends ConsumerWidget {
     final onlineCount = session.peerCount + (session.connection != VoiceConnectionState.lost ? 1 : 0);
     final recent = ref.watch(transmissionLogServiceProvider);
     final myUid = sb.Supabase.instance.client.auth.currentUser?.id;
-    final myRole = members.where((m) => m.userId == myUid).map((m) => m.role).firstOrNull;
+    final myMembership = members.where((m) => m.userId == myUid).firstOrNull;
+    final myRole = myMembership?.role;
 
     if (channel == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    Future<void> changeNotificationLevel(ChannelNotificationLevel level) async {
+      await ref.read(notificationsRepositoryProvider).setChannelNotificationLevel(channelId, level);
+      refreshChannelsProviders(ref, channelId: channelId);
     }
 
     Future<void> removeMember(ChannelMember m) async {
@@ -76,6 +84,8 @@ class ChannelScreen extends ConsumerWidget {
               onlineCount: onlineCount,
               isOwner: myRole == ChannelRole.owner,
               onLeaveOrDelete: () => leaveOrDelete(myRole == ChannelRole.owner),
+              notificationLevel: myMembership?.notificationLevel ?? ChannelNotificationLevel.all,
+              onChangeNotificationLevel: changeNotificationLevel,
             ),
             const SizedBox(height: 4),
             Text(
@@ -157,12 +167,16 @@ class _Header extends StatelessWidget {
   final int onlineCount;
   final bool isOwner;
   final VoidCallback onLeaveOrDelete;
+  final ChannelNotificationLevel notificationLevel;
+  final ValueChanged<ChannelNotificationLevel> onChangeNotificationLevel;
 
   const _Header({
     required this.channel,
     required this.onlineCount,
     required this.isOwner,
     required this.onLeaveOrDelete,
+    required this.notificationLevel,
+    required this.onChangeNotificationLevel,
   });
 
   @override
@@ -218,8 +232,26 @@ class _Header extends StatelessWidget {
           ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
-            onSelected: (_) => onLeaveOrDelete(),
+            onSelected: (value) {
+              switch (value) {
+                case 'leave_or_delete':
+                  onLeaveOrDelete();
+                case 'level_all':
+                  onChangeNotificationLevel(ChannelNotificationLevel.all);
+                case 'level_important':
+                  onChangeNotificationLevel(ChannelNotificationLevel.important);
+                case 'level_muted':
+                  onChangeNotificationLevel(ChannelNotificationLevel.muted);
+              }
+            },
             itemBuilder: (context) => [
+              for (final level in ChannelNotificationLevel.values)
+                CheckedPopupMenuItem(
+                  value: 'level_${level.name}',
+                  checked: notificationLevel == level,
+                  child: Text(level.label),
+                ),
+              const PopupMenuDivider(),
               PopupMenuItem(
                 value: 'leave_or_delete',
                 child: Text(isOwner ? 'Delete channel' : 'Leave channel'),

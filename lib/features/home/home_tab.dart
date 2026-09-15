@@ -6,6 +6,7 @@ import '../../models/channel.dart';
 import '../../models/presence_status.dart';
 import '../../services/channels_service.dart';
 import '../../services/friends_service.dart';
+import '../../services/notifications_service.dart';
 import '../../services/profile_service.dart';
 
 /// Home screen (spec §11): greeting, online friends preview, channel list,
@@ -28,9 +29,22 @@ class HomeTab extends ConsumerWidget {
     final channels = ref.watch(myChannelsProvider).value ?? [];
     final profile = ref.watch(profileServiceProvider);
     final name = profile.value?.displayName ?? '';
+    final unread = ref.watch(unreadNotificationCountProvider).value ?? 0;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Walkie Talkie')),
+      appBar: AppBar(
+        title: const Text('Walkie Talkie'),
+        actions: [
+          IconButton(
+            onPressed: () => context.push('/notifications'),
+            icon: Badge(
+              label: Text('$unread'),
+              isLabelVisible: unread > 0,
+              child: const Icon(Icons.notifications_outlined),
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
