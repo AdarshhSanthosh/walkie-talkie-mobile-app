@@ -59,7 +59,7 @@ before Phase 10 release prep, not as a side effect of a rebrand.
 | Create Channel → invite code + QR code | ✅ Real, backed by a real channel row |
 | Auth (Google, Apple) | 🟡 Wired, but needs providers enabled in the Supabase dashboard first |
 | Channel moderation (mute/ban/role changes) | 🟡 Schema ready (`muted`/`banned`/`role` columns), no RPCs/UI wired yet |
-| Actual audio connectivity between peers | 🟡 Signaling confirmed working; media (ICE/RTP) not yet confirmed — see caveat |
+| Actual audio connectivity between peers | 🟡 Signaling confirmed live cross-country (Japan↔India); direct audio failed without TURN as expected — TURN relay now wired, pending re-verification — see caveat |
 | Notifications: friend request/accept, channel-join alerts, read/unread inbox | ✅ Real (Supabase Postgres + RPCs) — verified live |
 | Notification preferences: 6 global toggles + per-channel All/Important/Muted | ✅ Real, persisted (Settings → Notifications; channel header menu) |
 | Actual push delivery to a device (FCM) | ⬜ Not wired — needs a Firebase project; `device_tokens` table is ready to receive tokens |
@@ -101,20 +101,32 @@ SDP offer/answer/ICE-candidate exchange. This is a small-group design (spec
 would swap this for an SFU without changing the public API
 (`startTalking`/`stopTalking`).
 
-**Caveat — verified so far**: on two real, separate peers (an Android
-emulator and an isolated headless Chrome instance, each running its own
-account), the full flow up through **signaling** was confirmed live: mic
-permission granted, Realtime presence showed both peers ("2 online"), and a
-real SDP offer/answer exchange happened between them. The ICE connection
-itself didn't complete in that test — STUN requests timed out on every
-network interface on the emulator side, consistent with this specific sandboxed
-dev environment restricting outbound UDP (needed for STUN/ICE) rather than
-an app bug; TCP-based signaling worked throughout. **This should be
-re-verified on two real devices on a normal network** (e.g. two phones on
-the same WiFi) before relying on it — that's a materially different network
-path than an emulator's virtualized NAT. If it turns out real networks also
-need help, the architecture already anticipates a TURN server (spec §7) —
-none is configured yet; only public STUN (`stun.l.google.com`).
+**Verified live, twice, with two different outcomes:**
+
+1. Sandbox → sandbox (Android emulator + an isolated headless Chrome
+   instance): signaling confirmed working end to end (mic permission, "2
+   online" presence, real SDP offer/answer exchange) but ICE never
+   connected — STUN requests timed out on every interface, consistent with
+   this dev sandbox blocking outbound UDP.
+2. **Real phone → real phone, Japan ↔ India, different mobile carriers**:
+   signaling again worked perfectly (channel joined by code, "transmitting"
+   status visible both ways), but **no audio made it through in either
+   direction** — the direct peer-to-peer connection never established.
+   This is the expected result of STUN-only ICE against two carrier-grade
+   or symmetric NATs, which STUN alone can't traverse — not a signaling bug,
+   and not specific to this sandbox.
+
+**TURN relay is now wired** (`TurnConfig`, `webrtc_service.dart`'s
+`_fetchIceServers`) to fix exactly this: at call start, the app fetches a
+short-lived TURN credential set from a configured provider (tested against
+[Metered.ca](https://www.metered.ca/), free tier, no card required — see
+setup below) and uses it as `iceServers`, so a direct connection can fall
+back to relaying through the TURN server when NAT traversal fails. Any
+failure to fetch credentials (not configured, network error, provider
+down) degrades to the STUN-only fallback rather than breaking voice
+outright. **Not yet re-verified with real TURN credentials on the same
+Japan/India real-device setup that first exposed the problem** — that's
+the next concrete test once a Metered account is set up.
 
 ### Bluetooth-aware audio routing (Phase 8)
 
@@ -279,6 +291,35 @@ OAuth credentials — not set up yet. The buttons are wired and will show a
 clear "provider not enabled" error until that's done; email/password is
 fully functional without it.
 
+## One-time setup: TURN server (for real voice connectivity)
+
+Without this, voice falls back to STUN-only, which **fails** whenever both
+peers are behind a restrictive/symmetric NAT — confirmed live between two
+real phones on different mobile carriers/countries (see the voice
+architecture caveat above). Setting this up is what actually gets a call to
+connect for most real users.
+
+1. Sign up free at [dashboard.metered.ca/signup](https://dashboard.metered.ca/signup)
+   (no credit card; free tier is 500MB/month TURN relay + unlimited STUN —
+   plenty for testing and light real use).
+2. Name your app when prompted; it drops you on the TURN Server page.
+3. Click **"Click Here to Generate Your First Credential"** (or **Add
+   Credential**) to create a credential.
+4. You need two things from there:
+   - Your app's TURN endpoint: `https://<your-app-name>.metered.live/api/v1/turn/credentials`
+   - The **API Key** shown next to the credential (via "Show API Key") —
+     this one is safe to embed client-side, it's scoped to that credential
+     (Metered's "Secret Key" under Dashboard → Developers is the one to
+     never expose — this app doesn't use that one).
+5. Add both to `env.json`: `TURN_CREDENTIALS_URL` (the endpoint from step
+   4, no query string) and `TURN_API_KEY`.
+
+The app calls that endpoint once per voice session (`_fetchIceServers` in
+`webrtc_service.dart`) and uses whatever it returns — STUN and TURN entries
+together — as the ICE server list for every peer connection in that
+session. Leaving `TURN_CREDENTIALS_URL`/`TURN_API_KEY` out of `env.json`
+entirely is also fine: the app just runs STUN-only, same as before.
+
 ## Running it
 
 Flutter 3.41.6, Android Studio, and the Android SDK are installed on this
@@ -336,10 +377,11 @@ covered and what it couldn't (real hardware, iOS).
 
 ## Next steps (later phases)
 
-1. **Confirm Phase 5 audio on real devices** — two phones on the same WiFi,
-   hold TALK on one, confirm the other hears it and the speaking indicator
-   updates. Set up a TURN server (e.g. `coturn` or a managed provider) if
-   direct connections turn out to need help even off the emulator.
+1. **Re-verify Phase 5 audio now that TURN is wired** — same real-device
+   test that first exposed the problem (two phones, different
+   networks/countries if possible, one holds TALK): confirm the other side
+   now actually hears it. Needs a Metered account set up first (see TURN
+   setup above).
 2. **Wire actual push delivery (Phase 6)** — create a Firebase project, add
    `firebase_core`/`firebase_messaging` to the app, call
    `register_device_token` with the resulting FCM token, and add a Supabase

@@ -1,19 +1,27 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 
+import '../core/config/turn_config.dart';
 import '../models/voice_connection_state.dart';
 import 'connectivity_service.dart';
 import 'profile_service.dart';
 import 'transmission_log_service.dart';
 
-const _iceServers = {
+/// STUN-only — used when no TURN provider is configured, or its credential
+/// fetch fails. Enough for peers on unrestrictive NATs, but confirmed live
+/// to fail between two phones behind restrictive/symmetric NATs (e.g. two
+/// different mobile carriers in different countries) since there's no
+/// relay to fall back to.
+const _fallbackIceServers = {
   'iceServers': [
     {'urls': 'stun:stun.l.google.com:19302'},
     {'urls': 'stun:stun1.l.google.com:19302'},
@@ -98,6 +106,9 @@ class WebRtcService extends Notifier<VoiceSessionState> with WidgetsBindingObser
   sb.RealtimeChannel? _signal;
   MediaStream? _localStream;
   final Map<String, RTCPeerConnection> _peers = {};
+  // Replaced with real TURN credentials in _init() when TurnConfig is set;
+  // stays STUN-only otherwise (or if the credential fetch fails).
+  Map<String, dynamic> _iceServers = _fallbackIceServers;
   String _myName = 'You';
   DateTime? _talkStartedAt;
   bool _disposed = false;
@@ -148,7 +159,13 @@ class WebRtcService extends Notifier<VoiceSessionState> with WidgetsBindingObser
   Future<void> _init() async {
     _myName = ref.read(profileServiceProvider).value?.displayName ?? 'You';
 
-    final micStatus = await Permission.microphone.request();
+    // Kick off alongside the permission prompt rather than after it — both
+    // are network/IO waits with nothing to do with each other, so there's
+    // no reason to pay their latency back-to-back.
+    final micStatusFuture = Permission.microphone.request();
+    final iceServersFuture = _fetchIceServers();
+
+    final micStatus = await micStatusFuture;
     if (_disposed) return;
     if (!micStatus.isGranted) {
       state = state.copyWith(
@@ -170,8 +187,29 @@ class WebRtcService extends Notifier<VoiceSessionState> with WidgetsBindingObser
     }
     if (_disposed) return;
 
+    _iceServers = await iceServersFuture;
+    if (_disposed) return;
+
     _setupAudioRouting();
     _connectSignaling();
+  }
+
+  /// Fetches real TURN (+ STUN) credentials from the configured provider
+  /// (spec §7) — falls back to STUN-only on any failure (not configured,
+  /// network error, bad key, provider outage) so a TURN problem degrades
+  /// the call rather than breaking it outright.
+  Future<Map<String, dynamic>> _fetchIceServers() async {
+    if (!TurnConfig.isConfigured) return _fallbackIceServers;
+    try {
+      final uri = Uri.parse('${TurnConfig.credentialsUrl}?apiKey=${TurnConfig.apiKey}');
+      final response = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return _fallbackIceServers;
+      final servers = jsonDecode(response.body);
+      if (servers is! List || servers.isEmpty) return _fallbackIceServers;
+      return {'iceServers': servers};
+    } on Object {
+      return _fallbackIceServers;
+    }
   }
 
   /// Best-effort audio routing (spec §8): prefer a connected Bluetooth
